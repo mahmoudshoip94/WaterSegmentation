@@ -124,18 +124,23 @@ Key observations:
 ### EDA Figures
 
 ![Figure — RGB composite](figures/eda_rgb_composite.png)
+
 *RGB composite generated from Red, Green, and Blue channels.*
 
 ![Figure — Ground-truth water mask](figures/eda_label_mask.png)
+
 *Example binary water mask. White = water, black = background.*
 
 ![Figure — 12 spectral bands](figures/eda_12_bands.png)
+
 *Representative visualization of the 12 input channels for one sample.*
 
 ![Figure — Per-image channel min/max distributions](figures/eda_channel_minmax.png)
+
 *Per-image minimum and maximum distributions across channels.*
 
 ![Figure — Correlation matrix between channels](figures/eda_correlation_matrix.png)
+
 *Correlation matrix between all 12 channels.*
 
 ---
