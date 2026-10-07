@@ -1,8 +1,6 @@
 # 🌊 Water Segmentation Using Multispectral and Optical Data
 
-A deep-learning semantic segmentation project for detecting water bodies from **12-channel satellite raster data** using a **U-Net implemented from scratch in PyTorch**.
-
-The project combines multispectral, optical, terrain, land-cover, and water-occurrence information, with a classical **NDWI threshold baseline** used for comparison.
+A deep-learning semantic segmentation project for detecting water bodies from **12-channel satellite raster data**. The project covers both **U-Net models trained from scratch in PyTorch** and **pretrained U-Net models with a ResNet34 ImageNet encoder**, together with a classical **NDWI threshold baseline** for comparison.
 
 <p align="center">
   <img src="figures/fig1_rgb_gt.png" alt="RGB Composite and Ground Truth" width="850">
@@ -12,32 +10,32 @@ The project combines multispectral, optical, terrain, land-cover, and water-occu
 
 ## 🎯 Project Overview
 
-The goal of this project is to perform **binary semantic segmentation of water pixels** from multispectral satellite imagery.
+The goal of this project is **binary semantic segmentation of water pixels** from multispectral / optical satellite imagery.
 
 Each input sample is a `128 × 128` raster with **12 channels**, while the target is a binary mask:
 
 * `0` → Background
 * `1` → Water
 
-The project follows an experimental workflow:
+The repository documents a full experimental pipeline:
 
 ```text
-Dataset Exploration
-        ↓
-Preprocessing
-        ↓
-Classical NDWI Baseline
-        ↓
-Baseline U-Net
-        ↓
-Feature Engineering
-        ↓
-Channel Ablation & Selection
-        ↓
-Final Model Experiments
-        ↓
-Independent Evaluation
+EDA
+ ↓
+NDWI Baseline
+ ↓
+12-Channel Scratch U-Net Baseline
+ ↓
+Feature Engineering / Channel Ablation
+ ↓
+Final Scratch U-Net
+ ↓
+Independent Test Evaluation
+ ↓
+Pretrained U-Net (ResNet34 ImageNet) Experiments
 ```
+
+Both **from-scratch** and **pretrained** families of experiments are included, evaluated under explicitly separated data splits.
 
 ---
 
@@ -58,18 +56,26 @@ The dataset contains **306 image-mask pairs**.
 | Water Coverage          |      25.98% |
 | Background Coverage     |      74.02% |
 
+The dataset is **not tracked inside the GitHub repository**. It is expected to be provided locally under:
+
+```text
+data/
+├── images/
+└── labels/
+```
+
 ### Channel Configuration
 
 | Index | Channel                      |
 | ----: | ---------------------------- |
-|     0 | Coastal Aerosol              |
+|     0 | Coastal                      |
 |     1 | Blue                         |
 |     2 | Green                        |
 |     3 | Red                          |
 |     4 | NIR                          |
 |     5 | SWIR1                        |
 |     6 | SWIR2                        |
-|     7 | QA Band                      |
+|     7 | QA                           |
 |     8 | MERIT DEM                    |
 |     9 | Copernicus DEM               |
 |    10 | ESA WorldCover               |
@@ -77,38 +83,87 @@ The dataset contains **306 image-mask pairs**.
 
 ### RGB Visualization
 
-For visualization, the RGB composite uses:
-
 ```text
-Red   → Channel 3
-Green → Channel 2
-Blue  → Channel 1
+RGB = [3, 2, 1]
 ```
 
-### Data Handling
+i.e. Red → channel 3, Green → channel 2, Blue → channel 1.
 
-Two channels are treated as categorical features and are not normalized:
+---
 
-* QA Band
-* ESA WorldCover
+## 🧪 Preprocessing
 
-The remaining channels are treated as continuous features.
+Preprocessing is performed consistently across the notebooks:
 
-Invalid MERIT DEM values of `-9999` are handled during preprocessing, while valid negative spectral values are preserved.
+* Dataset-level **channel statistics are computed from the training set only**.
+* Continuous channels are normalized using **training-set statistics**.
+* `QA` (channel 7) and `ESA WorldCover` (channel 10) are **categorical / discrete** channels and are not treated as continuous spectral channels.
+* Invalid `MERIT DEM` values of `-9999` are handled **before** computing DEM statistics and normalization.
+* Valid negative spectral values are preserved; they are not treated as invalid.
+* `SEED = 42` is used for reproducibility.
+
+### NDWI
+
+NDWI is derived from Green and NIR:
+
+```text
+NDWI = (Green − NIR) / (Green + NIR)
+```
+
+with:
+
+```text
+Green = channel 2
+NIR   = channel 4
+```
+
+For the **pretrained final experiment**, the input becomes:
+
+```text
+12 raw channels + NDWI = 13 input channels
+```
+
+---
+
+## 📁 Repository Structure
+
+```text
+WaterSegmentation/
+│
+├── data/                      # expected locally, not tracked in the repo
+│   ├── images/
+│   └── labels/
+│
+├── notebooks/
+│   ├── PretrainedModel/
+│   │   ├── Baseline_Pretrained_12_Channels.ipynb
+│   │   ├── Final_Model_80_20_Validation.ipynb
+│   │   └── Final_Model_Independent_Test.ipynb
+│   │
+│   └── U-Net_FromScratch/
+│       ├── EDA.ipynb
+│       ├── Baseline_UNet_12_Channels.ipynb
+│       ├── Feature_Engineering_and_Ablation.ipynb
+│       ├── Final_Model_80_20_Validation.ipynb
+│       └── Final_Model_Independent_Test.ipynb
+│
+├── figures/
+└── README.md
+```
 
 ---
 
 ## 🔬 Exploratory Data Analysis
 
-The EDA stage was used to understand:
+`notebooks/U-Net_FromScratch/EDA.ipynb` covers:
 
 * Channel distributions and ranges
 * RGB composites
-* Ground-truth masks
+* Ground-truth mask inspection
 * Per-image statistics
 * Channel correlations
-* Categorical and continuous feature behavior
-* Invalid DEM values
+* Categorical vs. continuous feature behavior
+* Invalid DEM value handling
 
 <p align="center">
   <img src="figures/eda_rgb_composite.png" alt="RGB Composite" width="700">
@@ -122,24 +177,22 @@ The EDA stage was used to understand:
 
 ## 🧪 Classical Baseline — NDWI
 
-Before training the deep-learning model, a classical **NDWI thresholding approach** was implemented as a reference baseline.
+A classical **NDWI thresholding baseline** was implemented before any deep-learning training.
 
-NDWI was calculated as:
+NDWI:
 
 ```python
 NDWI = (Green - NIR) / (Green + NIR + 1e-6)
 ```
 
-The threshold was selected using the validation set.
-
-### NDWI Results
+The threshold was selected on the validation split.
 
 | Metric | Validation |   Test |
 | ------ | ---------: | -----: |
 | IoU    |     0.7067 | 0.5052 |
 | F1     |     0.8282 | 0.6712 |
 
-The best validation threshold was:
+Selected threshold:
 
 ```text
 Threshold = -0.3
@@ -149,31 +202,19 @@ Threshold = -0.3
   <img src="figures/fig3_ndwi_baseline.png" alt="NDWI Baseline" width="850">
 </p>
 
-This baseline provides a useful reference for evaluating whether the deep-learning pipeline adds value beyond a simple spectral index rule.
+This baseline provides a reference for whether deep-learning segmentation improves over a simple spectral index rule.
 
 ---
 
-## 🧠 Deep Learning Approach
+## 🧠 From-Scratch U-Net Experiments
 
-The main segmentation model is a **U-Net implemented from scratch in PyTorch**.
+All notebooks in this family are under `notebooks/U-Net_FromScratch/`. The models are U-Nets implemented from scratch in PyTorch.
 
-The project contains multiple experimental stages rather than a single training run.
+### Baseline U-Net — 12 Channels (70/15/15)
 
-### Baseline U-Net
+Notebook: `Baseline_UNet_12_Channels.ipynb`
 
-The baseline model uses:
-
-* 12 raw input channels
-* BCEWithLogitsLoss
-* Adam optimizer
-* Learning rate `1e-4`
-* Batch size `8`
-* Early stopping
-* Horizontal and vertical flips
-* Rot90 augmentation
-* Light numerical-channel noise
-
-### Baseline Results
+Input: **12 raw channels**.
 
 | Metric    | Validation |   Test |
 | --------- | ---------: | -----: |
@@ -183,39 +224,19 @@ The baseline model uses:
 | Precision |          — | 0.8428 |
 | Recall    |          — | 0.7365 |
 
----
+### Feature Engineering & Channel Ablation (70/15/15)
 
-## 🧩 Feature Engineering & Channel Selection
+Notebook: `Feature_Engineering_and_Ablation.ipynb`
 
-Feature engineering was used to investigate whether spectral indices and channel selection could improve segmentation.
+Two distinct stages are reported:
 
-The experiments included:
+1. **Channel screening / selection** stage:
+   ```text
+   Screening IoU ≈ 0.6305
+   ```
+   This is a **selection-stage** score, not the final model score.
 
-* NDWI
-* MNDWI
-* NDMI
-* Channel ablation
-* Greedy channel removal
-
-### Channel Selection
-
-The selected configuration removed:
-
-```text
-Coastal Aerosol
-ESA WorldCover
-```
-
-and added:
-
-```text
-NDWI
-MNDWI
-```
-
-resulting in a final **12-channel input configuration**.
-
-### Feature Engineering Results
+2. **Final retraining of the selected configuration**:
 
 | Metric    | Validation |   Test |
 | --------- | ---------: | -----: |
@@ -225,29 +246,9 @@ resulting in a final **12-channel input configuration**.
 | Recall    |     0.7626 | 0.7350 |
 | Accuracy  |          — | 0.9130 |
 
-The best validation checkpoint was reached at **epoch 40**.
+### Final Scratch U-Net — Independent Test (80/10/10)
 
----
-
-## 🚀 Final Model Experiments
-
-Two final-model experiments were conducted using:
-
-```text
-12 raw channels + NDWI
-```
-
-with:
-
-* U-Net from scratch
-* Base filters = `32`
-* Depth = `5`
-* Dropout = `0.1`
-* BCE + Dice loss
-* Adam optimizer
-* Learning rate = `1e-4`
-
-### Experiment 1 — Independent Test Set
+Notebook: `Final_Model_Independent_Test.ipynb`
 
 Split:
 
@@ -255,71 +256,198 @@ Split:
 80% Train / 10% Validation / 10% Test
 ```
 
-The best validation threshold was:
+Input: **12 raw channels + NDWI (13 channels)**.
+
+After **validation threshold tuning**:
 
 ```text
-0.6
+Best threshold  = 0.6
+Validation IoU  = 0.7479
+Validation F1   = 0.8558
 ```
 
-#### Results
+Independent test at the selected threshold:
 
-| Metric    | Validation | Independent Test |
-| --------- | ---------: | ---------------: |
-| IoU       |     0.7479 |           0.5206 |
-| F1        |     0.8558 |           0.6848 |
-| Precision |     0.9423 |                — |
-| Recall    |     0.7838 |                — |
-| Accuracy  |     0.9387 |                — |
+| Metric    | Value  |
+| --------- | -----: |
+| Test IoU  | 0.5206 |
+| Test F1   | 0.6848 |
+| Precision | 0.9091 |
+| Recall    | 0.5492 |
+| Accuracy  | 0.8620 |
 
-This experiment includes an independent test set, and the reported test metrics were obtained from that held-out split.
+### Final Scratch U-Net — 80/20 Validation
 
----
-
-### Experiment 2 — 80/20 Validation Setup
+Notebook: `Final_Model_80_20_Validation.ipynb`
 
 Split:
 
 ```text
 80% Train / 20% Validation
+No independent test set.
 ```
 
-This experiment does **not** contain an independent test set.
+Best validation result:
 
-The best validation threshold was again:
+| Metric        | Value  |
+| ------------- | -----: |
+| Validation IoU | 0.6991 |
 
-```text
-0.6
-```
-
-#### Results
-
-| Metric    | Validation |
-| --------- | ---------: |
-| IoU       |     0.6991 |
-| F1        |     0.8229 |
-| Precision |     0.8840 |
-| Recall    |     0.7697 |
-| Accuracy  |     0.9166 |
-
-These values are validation results after threshold tuning and should not be presented as independent test performance.
+No test score is reported for this notebook, because none exists.
 
 ---
 
-## 📊 Experiment Summary
+## 🚀 Pretrained U-Net Experiments
 
-| Experiment          | Split    | Input                       | Validation IoU | Test IoU |
-| ------------------- | -------- | --------------------------- | -------------: | -------: |
-| NDWI Baseline       | 70/15/15 | NDWI                        |         0.7067 |   0.5052 |
-| Baseline U-Net      | 70/15/15 | 12 raw                      |         0.6176 |   0.6475 |
-| Feature Engineering | 70/15/15 | Selected raw + NDWI + MNDWI |         0.6453 |   0.6505 |
-| Final Experiment 1  | 80/10/10 | 12 raw + NDWI               |         0.7479 |   0.5206 |
-| Final Experiment 2  | 80/20    | 12 raw + NDWI               |         0.6991 |        — |
+All notebooks in this family are under `notebooks/PretrainedModel/`.
 
-> **Note:** These experiments use different data splits and evaluation protocols. Validation and test metrics from different experiments should therefore not be treated as a single directly comparable leaderboard.
+Approach:
+
+```text
+U-Net
++ ResNet34 encoder
++ ImageNet pretrained weights
++ Multispectral channel adaptation
+```
+
+The library used is **`segmentation-models-pytorch`**.
+
+### Multispectral Adaptation — Weight Averaging
+
+The RGB ResNet34 first convolution is adapted to the multispectral input using **weight averaging**:
+
+```text
+Original Conv1 weights = [64, 3, 7, 7]
+
+Average RGB input-channel weights:
+[64, 3, 7, 7] → [64, 1, 7, 7]
+
+Repeat across the required number of input channels:
+[64, 1, 7, 7] → [64, N, 7, 7]
+```
+
+where `N` is `12` or `13` depending on the experiment.
+
+No other pretrained adaptation strategy is claimed unless it exists in the current notebooks.
+
+### Pretrained Baseline — 12 Channels (70/15/15)
+
+Notebook: `Baseline_Pretrained_12_Channels.ipynb`
+
+| Setting        | Value                          |
+| -------------- | ------------------------------ |
+| Input          | 12 channels                    |
+| Model          | U-Net + ResNet34 ImageNet      |
+| Adaptation     | Weight Averaging               |
+| Threshold      | 0.5                            |
+
+| Metric    | Validation |   Test |
+| --------- | ---------: | -----: |
+| IoU       |     0.6884 | 0.7071 |
+| F1        |          — | 0.8284 |
+
+This is currently the **highest reported independent test IoU in the project**, and it comes from the **70/15/15 split**. It should not be directly compared against experiments using a different split as if they were under identical conditions.
+
+### Pretrained Final — 13 Channels (80/10/10)
+
+Notebook: `Final_Model_Independent_Test.ipynb`
+
+| Setting     | Value                              |
+| ----------- | ---------------------------------- |
+| Input       | 12 raw channels + NDWI (13)        |
+| Model       | U-Net + ResNet34 ImageNet          |
+| Adaptation  | Weight Averaging                   |
+
+Checkpoint selection metrics (threshold = 0.5):
+
+```text
+Validation IoU = 0.8204
+Validation F1  = 0.9013
+```
+
+Validation threshold tuning selected:
+
+```text
+Best threshold = 0.7
+```
+
+Validation metrics at the tuned threshold:
+
+```text
+Validation IoU = 0.8258
+Validation F1  = 0.9046
+```
+
+Independent test at threshold `0.7`:
+
+| Metric    | Value  |
+| --------- | -----: |
+| Test IoU  | 0.6709 |
+| Test F1   | 0.8030 |
+| Precision | 0.8941 |
+| Recall    | 0.7288 |
+| Accuracy  | 0.9024 |
+
+> Note on metric interpretation:
+> * `0.8204` is the **checkpoint-selection** validation IoU at threshold `0.5`.
+> * `0.8258` is the **threshold-tuned** validation IoU at threshold `0.7`.
+> * `0.6709` is the **independent test IoU** at threshold `0.7`.
+> These three numbers refer to different selection stages and should not be conflated.
+
+### Pretrained — 80/20 Validation
+
+Notebook: `Final_Model_80_20_Validation.ipynb`
+
+Split:
+
+```text
+80% Train / 20% Validation
+No independent test set.
+```
+
+Best validation result:
+
+| Metric        | Value  |
+| ------------- | -----: |
+| Validation IoU | 0.8159 |
+
+No test result is reported from this notebook.
+
+---
+
+## 📊 Experiment Comparison
+
+| Experiment                       | Model                        | Input              | Split    | Val IoU | Test IoU | Test F1 | Threshold |
+| -------------------------------- | ---------------------------- | ------------------ | -------- | ------: | -------: | ------: | --------: |
+| NDWI Baseline                    | NDWI threshold               | NDWI               | 70/15/15 |  0.7067 |   0.5052 |  0.6712 |    −0.3   |
+| Scratch Baseline                 | U-Net (scratch)              | 12 raw             | 70/15/15 |  0.6176 |   0.6475 |  0.7861 |     0.5   |
+| Scratch Feature Eng. (retrain)   | U-Net (scratch)              | 12 selected + NDWI + MNDWI | 70/15/15 |  0.6453 |   0.6505 |  0.7882 |     0.5   |
+| Scratch Final (Indep. Test)      | U-Net (scratch)              | 12 raw + NDWI      | 80/10/10 |  0.7479 |   0.5206 |  0.6848 |     0.6   |
+| Scratch Final (80/20 Val.)       | U-Net (scratch)              | 12 raw + NDWI      | 80/20    |  0.6991 |        — |       — |     0.6   |
+| Pretrained Baseline              | U-Net + ResNet34 (ImageNet)  | 12 raw             | 70/15/15 |  0.6884 |   0.7071 |  0.8284 |     0.5   |
+| Pretrained Final (Indep. Test)   | U-Net + ResNet34 (ImageNet)  | 12 raw + NDWI      | 80/10/10 |  0.8258 |   0.6709 |  0.8030 |     0.7   |
+| Pretrained (80/20 Val.)          | U-Net + ResNet34 (ImageNet)  | 12 raw + NDWI      | 80/20    |  0.8159 |        — |       — |     0.5   |
+
+> **Important:** these experiments use **different data splits** and evaluation protocols. Do not merge them into a single misleading leaderboard. Validation and test metrics across different splits are not directly comparable.
+
+### Interpretation
+
+* The strongest **independent test** result currently reported is the **Pretrained Baseline (12 channels, 70/15/15)** with `Test IoU = 0.7071`.
+* The strongest **final pretrained configuration** on the independent **80/10/10** evaluation is the **13-channel (12 + NDWI)** model with `Test IoU = 0.6709` and `Test F1 = 0.8030`.
+* Under the **80/10/10 protocol** (the closest thing to a controlled comparison here):
+
+  ```text
+  Scratch Final    : Val IoU = 0.7479, Test IoU = 0.5206
+  Pretrained Final : Val IoU = 0.8258, Test IoU = 0.6709
+  ```
+
+* The pretrained ResNet34 U-Net configuration achieved better independent-test generalization than the corresponding scratch U-Net configuration **under the evaluated 80/10/10 protocol**. This is not evidence that pretraining **alone** caused the improvement, since architecture and training configuration also changed.
 
 ---
 
 ## 🖼️ Visual Results
+
+Figures should be interpreted in the context of the specific experiment they belong to.
 
 ### RGB + Ground Truth
 
@@ -335,6 +463,8 @@ These values are validation results after threshold tuning and should not be pre
 
 ### U-Net Prediction
 
+Prediction visualization for the corresponding U-Net experiment. Refer to the notebook that generated the figure for the exact split and model configuration.
+
 <p align="center">
   <img src="figures/fig4_unet_prediction.png" alt="U-Net Prediction" width="850">
 </p>
@@ -346,6 +476,8 @@ These values are validation results after threshold tuning and should not be pre
 </p>
 
 ### NDWI vs U-Net
+
+This figure compares the classical NDWI baseline against a U-Net prediction. Use the values from the current notebooks as the source of truth for this comparison.
 
 <p align="center">
   <img src="figures/fig6_ndwi_vs_unet.png" alt="NDWI vs U-Net" width="850">
@@ -361,149 +493,18 @@ These values are validation results after threshold tuning and should not be pre
 
 ## 🧠 Key Findings
 
-### 1. Spectral indices were useful but not sufficient on their own
-
-The classical NDWI baseline achieved strong validation performance, but its test performance was lower, showing the difference between fitting a validation threshold and generalizing to unseen scenes.
-
-### 2. Channel selection changed the input representation
-
-Feature engineering experiments showed that removing some channels and adding spectral indices could produce a different and competitive representation.
-
-### 3. Evaluation protocol matters
-
-The project includes experiments with different train/validation/test splits. Because of this, reported metrics must always be interpreted together with their evaluation setup.
-
-### 4. Independent testing reveals a clear generalization gap
-
-The first final-model experiment achieved stronger validation metrics than its independent test metrics, highlighting the importance of evaluating segmentation models on data that was not used for model or threshold selection.
-
----
-
-## 📁 Project Structure
-
-```text
-WaterSegmentation/
-│
-├── data/
-│   ├── images/
-│   └── labels/
-│
-├── notebooks/
-│   ├── EDA.ipynb
-│   ├── prepro&model.ipynb
-│   ├── prepro&model_4.ipynb
-│   ├── final_model.ipynb
-│   └── final_model_2.ipynb
-│
-├── figures/
-│   ├── eda_rgb_composite.png
-│   ├── eda_label_mask.png
-│   ├── eda_12_bands.png
-│   ├── eda_channel_minmax.png
-│   ├── eda_correlation_matrix.png
-│   ├── fig1_rgb_gt.png
-│   ├── fig2_multispectral_bands.png
-│   ├── fig3_ndwi_baseline.png
-│   ├── fig4_unet_prediction.png
-│   ├── fig5_training_curves.png
-│   ├── fig6_ndwi_vs_unet.png
-│   └── fig7_error_map.png
-│
-└── README.md
-```
+1. **Spectral indices help but are not sufficient on their own.** The NDWI baseline fits the validation threshold well but generalizes less strongly to unseen scenes.
+2. **Channel selection changes the input representation.** Removing some channels and adding spectral indices produced a competitive representation during feature engineering.
+3. **Evaluation protocol matters.** The project contains experiments with different splits (70/15/15, 80/10/10, 80/20). Metrics must always be interpreted together with their evaluation setup.
+4. **Independent testing reveals a generalization gap.** Models with strong validation metrics can still lose significant IoU on a held-out test set, especially when the split is smaller.
+5. **Pretrained encoders improve independent-test generalization under the 80/10/10 protocol**, though architecture and training configuration also changed, so pretraining is not the sole factor.
 
 ---
 
 ## 🔧 Technical Details
 
 <details>
-<summary><strong>Preprocessing & Data Splits</strong></summary>
-
-### Preprocessing
-
-The preprocessing pipeline includes:
-
-* Raster loading with `rasterio`
-* Binary mask loading with Pillow
-* Invalid MERIT DEM handling
-* Dataset-wise per-channel normalization using training data only
-* Preservation of categorical channels
-* Optional spectral indices
-* Training-only augmentation
-* `SEED = 42`
-
-### Baseline Split
-
-```text
-Train      = 214
-Validation = 46
-Test       = 46
-```
-
-### Final Experiment 1 Split
-
-```text
-Train      = 244
-Validation = 31
-Test       = 31
-```
-
-### Final Experiment 2 Split
-
-```text
-Train      = 244
-Validation = 62
-Test       = None
-```
-
-</details>
-
-<details>
-<summary><strong>Feature Engineering Details</strong></summary>
-
-### NDWI
-
-```python
-NDWI = (Green - NIR) / (Green + NIR + 1e-6)
-```
-
-### Additional Features Explored
-
-```text
-NDWI
-MNDWI
-NDMI
-```
-
-### Ablation & Greedy Search
-
-The experiments evaluated the impact of removing channels and adding spectral indices.
-
-The selected configuration was:
-
-```text
-Raw:
-[1,2,3,4,5,6,7,8,9,11]
-
-Added:
-NDWI
-MNDWI
-
-Removed:
-Coastal Aerosol
-ESA WorldCover
-```
-
-Final input size:
-
-```text
-12 channels
-```
-
-</details>
-
-<details>
-<summary><strong>Baseline U-Net Configuration</strong></summary>
+<summary><strong>Baseline Scratch U-Net Configuration</strong></summary>
 
 | Parameter               | Value             |
 | ----------------------- | ----------------- |
@@ -511,7 +512,6 @@ Final input size:
 | Output Channels         | 1                 |
 | Base Filters            | 8                 |
 | Depth                   | 6                 |
-| Parameters              | 7,783,073         |
 | Loss                    | BCEWithLogitsLoss |
 | Optimizer               | Adam              |
 | Learning Rate           | `1e-4`            |
@@ -531,25 +531,27 @@ Numerical Channel Noise = 0.05
 </details>
 
 <details>
-<summary><strong>Final Model Configuration</strong></summary>
+<summary><strong>Final Scratch U-Net Configuration</strong></summary>
 
 ### Shared Architecture
 
 ```text
-Input Channels = 13
+Input Channels = 13 (12 raw + NDWI)
 Base Filters   = 32
 Depth          = 5
 Dropout        = 0.1
 Output         = 1
 Loss           = BCE + Dice
+Optimizer      = AdamW
+Learning Rate  = 1e-4
 ```
 
-### Final Experiment 1
+### Final Scratch — Independent Test (80/10/10)
 
 | Parameter         | Value             |
 | ----------------- | ----------------- |
 | Split             | 80/10/10          |
-| Optimizer         | Adam              |
+| Optimizer         | AdamW             |
 | Learning Rate     | `1e-4`            |
 | Weight Decay      | `1e-4`            |
 | Batch Size        | 8                 |
@@ -559,15 +561,13 @@ Loss           = BCE + Dice
 | Early Stopping    | 20                |
 | Maximum Epochs    | 100               |
 | Selection Metric  | Validation IoU    |
-| Best Epoch        | 14                |
-| Early Stopping    | Epoch 34          |
 
-### Final Experiment 2
+### Final Scratch — 80/20 Validation
 
 | Parameter          | Value             |
 | ------------------ | ----------------- |
 | Split              | 80/20             |
-| Optimizer          | Adam              |
+| Optimizer          | AdamW             |
 | Learning Rate      | `1e-4`            |
 | Weight Decay       | `1e-4`            |
 | Batch Size         | 8                 |
@@ -580,21 +580,80 @@ Loss           = BCE + Dice
 | Early Stopping     | 20                |
 | Maximum Epochs     | 100               |
 | Selection Metric   | Validation IoU    |
-| Best Epoch         | 47                |
-| Early Stopping     | Epoch 67          |
+
+</details>
+
+<details>
+<summary><strong>Pretrained U-Net Configuration</strong></summary>
+
+```text
+Model       = U-Net (segmentation-models-pytorch)
+Encoder     = ResNet34
+Weights     = ImageNet
+Adaptation  = Weight averaging of Conv1 RGB weights
+              [64, 3, 7, 7] → [64, 1, 7, 7] → [64, N, 7, 7]
+```
+
+`N = 12` for the baseline pretrained notebook, `N = 13` for the final pretrained notebook.
+
+</details>
+
+<details>
+<summary><strong>Data Splits</strong></summary>
+
+### 70/15/15 Split
+
+```text
+Train      = 214
+Validation = 46
+Test       = 46
+```
+
+Used by:
+* NDWI baseline
+* Scratch baseline
+* Scratch feature engineering
+* Pretrained baseline (12 channels)
+
+### 80/10/10 Split
+
+```text
+Train      = 244
+Validation = 31
+Test       = 31
+```
+
+Used by:
+* Scratch Final — Independent Test
+* Pretrained Final — Independent Test
+
+### 80/20 Split
+
+```text
+Train      = 244
+Validation = 62
+Test       = None
+```
+
+Used by:
+* Scratch Final — 80/20 Validation
+* Pretrained — 80/20 Validation
 
 </details>
 
 <details>
 <summary><strong>Notebook Roles</strong></summary>
 
-| Notebook               | Purpose                                                                                                       |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `EDA.ipynb`            | Dataset exploration, channel analysis, mask analysis, RGB visualization, statistics, and correlation analysis |
-| `prepro&model.ipynb`   | Baseline U-Net using all 12 raw channels                                                                      |
-| `prepro&model_4.ipynb` | Feature engineering, ablation, and greedy channel search                                                      |
-| `final_model.ipynb`    | Final Model Experiment 1 with an independent test set                                                         |
-| `final_model_2.ipynb`  | Final Model Experiment 2 using an 80/20 train-validation split                                                |
+| Notebook                                                    | Purpose                                                                    |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `U-Net_FromScratch/EDA.ipynb`                               | Dataset exploration, channel analysis, mask analysis, statistics           |
+| `U-Net_FromScratch/Baseline_UNet_12_Channels.ipynb`         | Scratch U-Net on 12 raw channels (70/15/15)                                |
+| `U-Net_FromScratch/Feature_Engineering_and_Ablation.ipynb`  | Feature engineering, channel ablation, greedy channel search               |
+| `U-Net_FromScratch/Final_Model_80_20_Validation.ipynb`      | Final scratch U-Net, 80/20 split, validation-only                          |
+| `U-Net_FromScratch/Final_Model_Independent_Test.ipynb`      | Final scratch U-Net, 80/10/10 split, independent test                      |
+| `PretrainedModel/Baseline_Pretrained_12_Channels.ipynb`     | U-Net + ResNet34 ImageNet on 12 raw channels (70/15/15)                    |
+| `PretrainedModel/Final_Model_80_20_Validation.ipynb`        | Final pretrained U-Net, 80/20 split, validation-only                       |
+| `PretrainedModel/Final_Model_Independent_Test.ipynb`        | Final pretrained U-Net, 13 channels (12 + NDWI), 80/10/10, independent test |
 
 </details>
 
@@ -602,13 +661,14 @@ Loss           = BCE + Dice
 
 ## ⚠️ Limitations
 
-* The dataset contains only 306 image-mask pairs.
-* Performance can vary across scenes and split configurations.
-* Some scenes contain no water.
-* The models were trained from scratch without a pretrained encoder.
-* Threshold selection was performed on validation data.
-* The second final-model experiment does not contain an independent test set.
-* Metrics from different evaluation protocols are not directly equivalent.
+* **Different splits across experiments.** Some results come from 70/15/15, others from 80/10/10 or 80/20, so not all metrics are directly comparable.
+* **Feature / channel selection was driven by validation performance**, so some validation overfitting is possible.
+* **Scratch vs. pretrained is not a fully controlled ablation**, because architecture and training configuration differ in addition to the encoder initialization.
+* **No scene-level or group-level splitting** is used, if applicable in the current implementation.
+* **Dataset-level generalization** would require evaluation on additional geographic scenes beyond the current dataset.
+* **The dataset itself is not tracked in the repository** and must be provided locally under `data/images/` and `data/labels/`.
+
+These are methodological limitations, not bugs in the code.
 
 ---
 
@@ -617,36 +677,42 @@ Loss           = BCE + Dice
 ### Install Dependencies
 
 ```bash
-pip install numpy pandas rasterio scikit-learn matplotlib seaborn pillow torch
+pip install torch torchvision rasterio numpy pandas matplotlib scikit-learn segmentation-models-pytorch
 ```
+
+Additional visualization / notebook dependencies (e.g. `seaborn`, `pillow`) can be installed as needed.
 
 A CUDA-capable GPU is recommended for training.
 
-### Workflow
-
-Run the notebooks in the following order:
+### Notebook Order
 
 ```text
-EDA.ipynb
-      ↓
-prepro&model.ipynb
-      ↓
-prepro&model_4.ipynb
-      ↓
-final_model.ipynb
-      ↓
-final_model_2.ipynb
+U-Net_FromScratch/EDA.ipynb
+        ↓
+U-Net_FromScratch/Baseline_UNet_12_Channels.ipynb
+        ↓
+U-Net_FromScratch/Feature_Engineering_and_Ablation.ipynb
+        ↓
+U-Net_FromScratch/Final_Model_Independent_Test.ipynb
+        ↓
+U-Net_FromScratch/Final_Model_80_20_Validation.ipynb
+        ↓
+PretrainedModel/Baseline_Pretrained_12_Channels.ipynb
+        ↓
+PretrainedModel/Final_Model_Independent_Test.ipynb
+        ↓
+PretrainedModel/Final_Model_80_20_Validation.ipynb
 ```
 
-Update the dataset path used by the notebooks before training.
-
-The project uses:
+Make sure the dataset is available locally under:
 
 ```text
-SEED = 42
+data/
+├── images/
+└── labels/
 ```
 
-for reproducibility.
+before running the notebooks.
 
 ---
 
@@ -655,13 +721,13 @@ for reproducibility.
 ```text
 Python
 PyTorch
-Rasterio
-NumPy
-Pandas
-Scikit-learn
-Matplotlib
-Seaborn
-Pillow
+torchvision
+rasterio
+numpy
+pandas
+matplotlib
+scikit-learn
+segmentation-models-pytorch
 ```
 
 ---
@@ -679,26 +745,26 @@ AI Engineer
 
 ## 📌 Project Summary
 
-This project explores water segmentation from multispectral satellite data through a complete experimental pipeline:
+This repository documents a complete experimental progression for water segmentation from multispectral satellite imagery:
 
 ```text
-Satellite Data
-      ↓
+Satellite Data (12 channels)
+        ↓
 EDA
-      ↓
-Preprocessing
-      ↓
+        ↓
+Preprocessing (train-set statistics, categorical channels, DEM handling)
+        ↓
 NDWI Baseline
-      ↓
-U-Net Baseline
-      ↓
-Feature Engineering
-      ↓
-Channel Selection
-      ↓
-Final Experiments
-      ↓
-Independent Evaluation
+        ↓
+Scratch U-Net Baseline
+        ↓
+Feature Engineering / Channel Ablation
+        ↓
+Final Scratch U-Net (80/10/10 and 80/20)
+        ↓
+Pretrained U-Net + ResNet34 ImageNet (12 and 13 channels)
+        ↓
+Independent Test Evaluation
 ```
 
-The repository documents the complete progression from a classical spectral baseline to deep-learning segmentation experiments, while keeping each evaluation protocol explicitly separated.
+The strongest independent test IoU currently reported is **0.7071**, achieved by the **pretrained baseline (12 channels, 70/15/15)**. The strongest final pretrained configuration under the **80/10/10** protocol reaches **Test IoU = 0.6709** and **Test F1 = 0.8030** with a tuned threshold of `0.7`.
