@@ -68,7 +68,7 @@ data/
 
 | Index | Channel                      |
 | ----: | ---------------------------- |
-|     0 | Coastal                      |
+|     0 | Coastal Aerosol              |
 |     1 | Blue                         |
 |     2 | Green                        |
 |     3 | Red                          |
@@ -98,16 +98,17 @@ Preprocessing is performed consistently across the notebooks:
 * Dataset-level **channel statistics are computed from the training set only**.
 * Continuous channels are normalized using **training-set statistics**.
 * `QA` (channel 7) and `ESA WorldCover` (channel 10) are **categorical / discrete** channels and are not treated as continuous spectral channels.
-* Invalid `MERIT DEM` values of `-9999` are handled **before** computing DEM statistics and normalization.
 * Valid negative spectral values are preserved; they are not treated as invalid.
 * `SEED = 42` is used for reproducibility.
+
+> Note: whether invalid MERIT DEM sentinel values (e.g. `-9999`) are handled before normalization in every preprocessing path has **not** been independently verified from the current notebooks. See the [Limitations](#️-limitations) section.
 
 ### NDWI
 
 NDWI is derived from Green and NIR:
 
 ```text
-NDWI = (Green − NIR) / (Green + NIR)
+NDWI = (Green − NIR) / (Green + NIR + 1e-6)
 ```
 
 with:
@@ -230,11 +231,11 @@ Notebook: `Feature_Engineering_and_Ablation.ipynb`
 
 Two distinct stages are reported:
 
-1. **Channel screening / selection** stage:
+1. **Channel screening / selection** stage (validation-based selection):
    ```text
    Screening IoU ≈ 0.6305
    ```
-   This is a **selection-stage** score, not the final model score.
+   This is a **selection-stage** score, not the final model score, and not an independent-test result.
 
 2. **Final retraining of the selected configuration**:
 
@@ -289,8 +290,8 @@ No independent test set.
 
 Best validation result:
 
-| Metric        | Value  |
-| ------------- | -----: |
+| Metric         | Value  |
+| -------------- | -----: |
 | Validation IoU | 0.6991 |
 
 No test score is reported for this notebook, because none exists.
@@ -334,29 +335,29 @@ No other pretrained adaptation strategy is claimed unless it exists in the curre
 
 Notebook: `Baseline_Pretrained_12_Channels.ipynb`
 
-| Setting        | Value                          |
-| -------------- | ------------------------------ |
-| Input          | 12 channels                    |
-| Model          | U-Net + ResNet34 ImageNet      |
-| Adaptation     | Weight Averaging               |
-| Threshold      | 0.5                            |
+| Setting    | Value                     |
+| ---------- | ------------------------- |
+| Input      | 12 channels               |
+| Model      | U-Net + ResNet34 ImageNet |
+| Adaptation | Weight Averaging          |
+| Threshold  | 0.5                       |
 
-| Metric    | Validation |   Test |
-| --------- | ---------: | -----: |
-| IoU       |     0.6884 | 0.7071 |
-| F1        |          — | 0.8284 |
+| Metric | Validation |   Test |
+| ------ | ---------: | -----: |
+| IoU    |     0.6884 | 0.7071 |
+| F1     |          — | 0.8284 |
 
-This is currently the **highest reported independent test IoU in the project**, and it comes from the **70/15/15 split**. It should not be directly compared against experiments using a different split as if they were under identical conditions.
+This is currently the **highest reported independent-test IoU in the project**, and it comes from the **70/15/15 split**. It should not be directly compared against experiments using a different split as if they were under identical conditions.
 
 ### Pretrained Final — 13 Channels (80/10/10)
 
 Notebook: `Final_Model_Independent_Test.ipynb`
 
-| Setting     | Value                              |
-| ----------- | ---------------------------------- |
-| Input       | 12 raw channels + NDWI (13)        |
-| Model       | U-Net + ResNet34 ImageNet          |
-| Adaptation  | Weight Averaging                   |
+| Setting    | Value                       |
+| ---------- | --------------------------- |
+| Input      | 12 raw channels + NDWI (13) |
+| Model      | U-Net + ResNet34 ImageNet   |
+| Adaptation | Weight Averaging            |
 
 Checkpoint selection metrics (threshold = 0.5):
 
@@ -392,7 +393,7 @@ Independent test at threshold `0.7`:
 > * `0.8204` is the **checkpoint-selection** validation IoU at threshold `0.5`.
 > * `0.8258` is the **threshold-tuned** validation IoU at threshold `0.7`.
 > * `0.6709` is the **independent test IoU** at threshold `0.7`.
-> These three numbers refer to different selection stages and should not be conflated.
+> These three numbers refer to different selection stages and should not be conflated. The threshold was selected using validation data only; the test set was not used to tune the threshold.
 
 ### Pretrained — 80/20 Validation
 
@@ -407,8 +408,8 @@ No independent test set.
 
 Best validation result:
 
-| Metric        | Value  |
-| ------------- | -----: |
+| Metric         | Value  |
+| -------------- | -----: |
 | Validation IoU | 0.8159 |
 
 No test result is reported from this notebook.
@@ -417,23 +418,27 @@ No test result is reported from this notebook.
 
 ## 📊 Experiment Comparison
 
-| Experiment                       | Model                        | Input              | Split    | Val IoU | Test IoU | Test F1 | Threshold |
-| -------------------------------- | ---------------------------- | ------------------ | -------- | ------: | -------: | ------: | --------: |
-| NDWI Baseline                    | NDWI threshold               | NDWI               | 70/15/15 |  0.7067 |   0.5052 |  0.6712 |    −0.3   |
-| Scratch Baseline                 | U-Net (scratch)              | 12 raw             | 70/15/15 |  0.6176 |   0.6475 |  0.7861 |     0.5   |
-| Scratch Feature Eng. (retrain)   | U-Net (scratch)              | 12 selected + NDWI + MNDWI | 70/15/15 |  0.6453 |   0.6505 |  0.7882 |     0.5   |
-| Scratch Final (Indep. Test)      | U-Net (scratch)              | 12 raw + NDWI      | 80/10/10 |  0.7479 |   0.5206 |  0.6848 |     0.6   |
-| Scratch Final (80/20 Val.)       | U-Net (scratch)              | 12 raw + NDWI      | 80/20    |  0.6991 |        — |       — |     0.6   |
-| Pretrained Baseline              | U-Net + ResNet34 (ImageNet)  | 12 raw             | 70/15/15 |  0.6884 |   0.7071 |  0.8284 |     0.5   |
-| Pretrained Final (Indep. Test)   | U-Net + ResNet34 (ImageNet)  | 12 raw + NDWI      | 80/10/10 |  0.8258 |   0.6709 |  0.8030 |     0.7   |
-| Pretrained (80/20 Val.)          | U-Net + ResNet34 (ImageNet)  | 12 raw + NDWI      | 80/20    |  0.8159 |        — |       — |     0.5   |
+| Experiment                     | Model                       | Input                      | Split    | Val IoU | Test IoU | Test F1 | Threshold |
+| ------------------------------ | --------------------------- | -------------------------- | -------- | ------: | -------: | ------: | --------: |
+| NDWI Baseline                  | NDWI threshold              | NDWI                       | 70/15/15 |  0.7067 |   0.5052 |  0.6712 |    −0.3   |
+| Scratch Baseline               | U-Net (scratch)             | 12 raw                     | 70/15/15 |  0.6176 |   0.6475 |  0.7861 |     0.5   |
+| Scratch Feature Eng. (retrain) | U-Net (scratch)             | 12 selected + NDWI + MNDWI | 70/15/15 |  0.6453 |   0.6505 |  0.7882 |     0.5   |
+| Scratch Final (Indep. Test)    | U-Net (scratch)             | 12 raw + NDWI              | 80/10/10 |  0.7479 |   0.5206 |  0.6848 |     0.6   |
+| Scratch Final (80/20 Val.)     | U-Net (scratch)             | 12 raw + NDWI              | 80/20    |  0.6991 |        — |       — |     0.6   |
+| Pretrained Baseline            | U-Net + ResNet34 (ImageNet) | 12 raw                     | 70/15/15 |  0.6884 |   0.7071 |  0.8284 |     0.5   |
+| Pretrained Final (Indep. Test) | U-Net + ResNet34 (ImageNet) | 12 raw + NDWI              | 80/10/10 |  0.8258 |   0.6709 |  0.8030 |     0.7   |
+| Pretrained (80/20 Val.)        | U-Net + ResNet34 (ImageNet) | 12 raw + NDWI              | 80/20    |  0.8159 |        — |       — |     0.5   |
 
 > **Important:** these experiments use **different data splits** and evaluation protocols. Do not merge them into a single misleading leaderboard. Validation and test metrics across different splits are not directly comparable.
 
+> **Footnote on Pretrained Final (Indep. Test) row:** `Val IoU = 0.8258` is the **threshold-tuned** validation IoU at threshold `0.7`. The **checkpoint-selection** validation IoU was `0.8204` at threshold `0.5`. These are different evaluation stages and should not be conflated.
+
+> **Footnote on Scratch Final (Indep. Test) row:** `Val IoU = 0.7479` is the **threshold-tuned** validation IoU at threshold `0.6`.
+
 ### Interpretation
 
-* The strongest **independent test** result currently reported is the **Pretrained Baseline (12 channels, 70/15/15)** with `Test IoU = 0.7071`.
-* The strongest **final pretrained configuration** on the independent **80/10/10** evaluation is the **13-channel (12 + NDWI)** model with `Test IoU = 0.6709` and `Test F1 = 0.8030`.
+* The **highest reported independent-test IoU** among the evaluated configurations is the **Pretrained Baseline (12 channels, 70/15/15)** with `Test IoU = 0.7071`.
+* The **best final pretrained configuration** on the independent **80/10/10** evaluation is the **13-channel (12 + NDWI)** model with `Test IoU = 0.6709` and `Test F1 = 0.8030`.
 * Under the **80/10/10 protocol** (the closest thing to a controlled comparison here):
 
   ```text
@@ -441,7 +446,7 @@ No test result is reported from this notebook.
   Pretrained Final : Val IoU = 0.8258, Test IoU = 0.6709
   ```
 
-* The pretrained ResNet34 U-Net configuration achieved better independent-test generalization than the corresponding scratch U-Net configuration **under the evaluated 80/10/10 protocol**. This is not evidence that pretraining **alone** caused the improvement, since architecture and training configuration also changed.
+* Under the evaluated 80/10/10 protocol, the **pretrained ResNet34 U-Net configuration achieved higher independent-test performance than the evaluated scratch U-Net configuration**. This is a comparison of evaluated configurations, **not** a controlled pretraining-only ablation, because architecture and training configuration differ as well.
 
 ---
 
@@ -497,7 +502,7 @@ This figure compares the classical NDWI baseline against a U-Net prediction. Use
 2. **Channel selection changes the input representation.** Removing some channels and adding spectral indices produced a competitive representation during feature engineering.
 3. **Evaluation protocol matters.** The project contains experiments with different splits (70/15/15, 80/10/10, 80/20). Metrics must always be interpreted together with their evaluation setup.
 4. **Independent testing reveals a generalization gap.** Models with strong validation metrics can still lose significant IoU on a held-out test set, especially when the split is smaller.
-5. **Pretrained encoders improve independent-test generalization under the 80/10/10 protocol**, though architecture and training configuration also changed, so pretraining is not the sole factor.
+5. **Pretrained vs. scratch under the 80/10/10 protocol.** Under the evaluated 80/10/10 protocol, the pretrained ResNet34 U-Net configuration achieved higher independent-test performance than the evaluated scratch U-Net configuration. This is a comparison of evaluated configurations, **not** a controlled pretraining-only ablation — architecture and training configuration also differ.
 
 ---
 
@@ -644,16 +649,16 @@ Used by:
 <details>
 <summary><strong>Notebook Roles</strong></summary>
 
-| Notebook                                                    | Purpose                                                                    |
-| ----------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `U-Net_FromScratch/EDA.ipynb`                               | Dataset exploration, channel analysis, mask analysis, statistics           |
-| `U-Net_FromScratch/Baseline_UNet_12_Channels.ipynb`         | Scratch U-Net on 12 raw channels (70/15/15)                                |
-| `U-Net_FromScratch/Feature_Engineering_and_Ablation.ipynb`  | Feature engineering, channel ablation, greedy channel search               |
-| `U-Net_FromScratch/Final_Model_80_20_Validation.ipynb`      | Final scratch U-Net, 80/20 split, validation-only                          |
-| `U-Net_FromScratch/Final_Model_Independent_Test.ipynb`      | Final scratch U-Net, 80/10/10 split, independent test                      |
-| `PretrainedModel/Baseline_Pretrained_12_Channels.ipynb`     | U-Net + ResNet34 ImageNet on 12 raw channels (70/15/15)                    |
-| `PretrainedModel/Final_Model_80_20_Validation.ipynb`        | Final pretrained U-Net, 80/20 split, validation-only                       |
-| `PretrainedModel/Final_Model_Independent_Test.ipynb`        | Final pretrained U-Net, 13 channels (12 + NDWI), 80/10/10, independent test |
+| Notebook                                                   | Purpose                                                                   |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `U-Net_FromScratch/EDA.ipynb`                              | Dataset exploration, channel analysis, mask analysis, statistics          |
+| `U-Net_FromScratch/Baseline_UNet_12_Channels.ipynb`        | Scratch U-Net on 12 raw channels (70/15/15)                               |
+| `U-Net_FromScratch/Feature_Engineering_and_Ablation.ipynb` | Feature engineering, channel ablation, greedy channel search              |
+| `U-Net_FromScratch/Final_Model_80_20_Validation.ipynb`     | Final scratch U-Net, 80/20 split, validation-only                         |
+| `U-Net_FromScratch/Final_Model_Independent_Test.ipynb`     | Final scratch U-Net, 80/10/10 split, independent test                     |
+| `PretrainedModel/Baseline_Pretrained_12_Channels.ipynb`    | U-Net + ResNet34 ImageNet on 12 raw channels (70/15/15)                   |
+| `PretrainedModel/Final_Model_80_20_Validation.ipynb`       | Final pretrained U-Net, 80/20 split, validation-only                      |
+| `PretrainedModel/Final_Model_Independent_Test.ipynb`       | Final pretrained U-Net, 13 channels (12 + NDWI), 80/10/10, independent test |
 
 </details>
 
@@ -662,11 +667,13 @@ Used by:
 ## ⚠️ Limitations
 
 * **Different splits across experiments.** Some results come from 70/15/15, others from 80/10/10 or 80/20, so not all metrics are directly comparable.
-* **Feature / channel selection was driven by validation performance**, so some validation overfitting is possible.
+* **Feature / channel selection and threshold tuning were performed using the validation split.** The resulting validation metrics may therefore be optimistically biased relative to independent-test performance. This is validation-set optimization, **not** test leakage.
 * **Scratch vs. pretrained is not a fully controlled ablation**, because architecture and training configuration differ in addition to the encoder initialization.
-* **No scene-level or group-level splitting** is used, if applicable in the current implementation.
+* **DEM NoData handling is not independently verified.** Whether invalid MERIT DEM sentinel values (e.g. `-9999`) are handled before normalization in every preprocessing path has not been verified from the current notebooks and should be confirmed before relying on DEM-derived statistics.
+* **No scene-level or group-level splitting** is used, if applicable in the current implementation. Nearby scenes may therefore appear in both training and evaluation.
 * **Dataset-level generalization** would require evaluation on additional geographic scenes beyond the current dataset.
 * **The dataset itself is not tracked in the repository** and must be provided locally under `data/images/` and `data/labels/`.
+* **Reproducibility depends partly on local/Colab paths** used in the notebooks; the notebooks are not fully self-contained.
 
 These are methodological limitations, not bugs in the code.
 
@@ -714,6 +721,14 @@ data/
 
 before running the notebooks.
 
+The project uses:
+
+```text
+SEED = 42
+```
+
+for reproducibility.
+
 ---
 
 ## 🛠️ Tech Stack
@@ -752,7 +767,7 @@ Satellite Data (12 channels)
         ↓
 EDA
         ↓
-Preprocessing (train-set statistics, categorical channels, DEM handling)
+Preprocessing (train-set statistics, categorical channels)
         ↓
 NDWI Baseline
         ↓
@@ -767,4 +782,6 @@ Pretrained U-Net + ResNet34 ImageNet (12 and 13 channels)
 Independent Test Evaluation
 ```
 
-The strongest independent test IoU currently reported is **0.7071**, achieved by the **pretrained baseline (12 channels, 70/15/15)**. The strongest final pretrained configuration under the **80/10/10** protocol reaches **Test IoU = 0.6709** and **Test F1 = 0.8030** with a tuned threshold of `0.7`.
+The **highest reported independent-test IoU** among the evaluated configurations is **0.7071**, achieved by the **pretrained baseline (12 channels, 70/15/15)**. The **best final pretrained configuration** under the **80/10/10** protocol reaches **Test IoU = 0.6709** and **Test F1 = 0.8030** with a tuned threshold of `0.7`.
+
+Under the evaluated 80/10/10 protocol, the pretrained ResNet34 U-Net configuration achieved higher independent-test performance than the evaluated scratch U-Net configuration. This is a comparison of evaluated configurations, **not** a controlled pretraining-only ablation.
