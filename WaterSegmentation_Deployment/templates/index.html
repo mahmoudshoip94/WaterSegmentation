@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Water Segmentation | Multispectral AI</title>
+  <style>
+    :root { color-scheme: light; --navy:#10233f; --blue:#1d5d91; --aqua:#dff3f5; --paper:#f5f8fc; --ink:#1a2738; --muted:#607086; --line:#dce5ef; }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin:0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; background:var(--paper); color:var(--ink); }
+    .top { background:linear-gradient(115deg,#10233f,#1d5d91); color:white; padding:34px 20px 45px; }
+    .top-inner, main { width:min(1000px, calc(100% - 32px)); margin:0 auto; }
+    .eyebrow { letter-spacing:.14em; text-transform:uppercase; font-size:.75rem; color:#bfe9f4; font-weight:700; }
+    h1 { margin:10px 0 8px; font-size:clamp(1.8rem,4vw,2.7rem); line-height:1.12; }
+    .top p { color:#e2edf8; margin:0; max-width:700px; line-height:1.6; }
+    main { margin-top:-20px; padding-bottom:40px; }
+    .panel { background:white; border:1px solid var(--line); border-radius:18px; padding:24px; box-shadow:0 8px 28px rgba(20,45,75,.07); }
+    .panel h2 { margin:0 0 8px; color:var(--navy); font-size:1.2rem; }
+    .hint { margin:0 0 20px; color:var(--muted); line-height:1.55; font-size:.95rem; }
+    .drop { border:1.5px dashed #9eb7cf; background:#f8fbff; border-radius:13px; padding:22px; display:flex; flex-direction:column; gap:11px; }
+    input[type=file] { width:100%; max-width:100%; color:var(--muted); }
+    .actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:18px; }
+    button { border:0; border-radius:10px; background:var(--blue); color:white; padding:12px 18px; font-size:.96rem; font-weight:700; cursor:pointer; }
+    button:disabled { opacity:.55; cursor:wait; }
+    .secondary { display:inline-block; color:var(--blue); border:1px solid #b7ccdf; background:white; text-decoration:none; padding:11px 16px; border-radius:10px; font-weight:650; }
+    .status { margin-top:15px; color:var(--muted); font-size:.92rem; min-height:1.5em; }
+    .status.error { color:#b42318; }
+    .results { display:none; margin-top:22px; }
+    .results.visible { display:block; }
+    .results-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin-top:12px; }
+    .result-card { border:1px solid var(--line); border-radius:13px; padding:14px; min-width:0; }
+    .result-card h3 { margin:0 0 10px; font-size:1rem; color:var(--navy); }
+    .image-frame { background:#edf2f7; min-height:180px; display:flex; align-items:center; justify-content:center; border-radius:9px; overflow:hidden; }
+    .image-frame img { display:block; width:100%; height:auto; image-rendering:auto; }
+    .empty { color:#76869a; padding:30px 12px; text-align:center; font-size:.9rem; }
+    .stats { color:var(--muted); font-size:.9rem; margin:12px 0 0; line-height:1.6; }
+    .legend { display:flex; flex-wrap:wrap; gap:12px; margin-top:14px; font-size:.85rem; color:var(--muted); }
+    .dot { display:inline-block; width:12px; height:12px; border:1px solid #a9b7c8; border-radius:3px; vertical-align:-2px; margin-right:5px; }
+    footer { text-align:center; color:#718096; font-size:.82rem; padding:0 16px 26px; }
+    @media (max-width:650px) { .panel { padding:18px; } .results-grid { grid-template-columns:1fr; } .top { padding-top:28px; } }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="top-inner">
+      <div class="eyebrow">Multispectral · PyTorch · U-Net</div>
+      <h1>Water Segmentation</h1>
+      <p>Upload a 12-band TIFF/GeoTIFF to predict water pixels with the pretrained U-Net + ResNet34 model.</p>
+    </div>
+  </header>
+  <main>
+    <section class="panel">
+      <h2>Run a prediction</h2>
+      <p class="hint">Expected input: 12 bands in the project's original order and dimensions of 128 × 128 pixels. Ordinary RGB/JPEG/PNG images are not valid model inputs.</p>
+      <form id="upload-form">
+        <div class="drop">
+          <label for="tiff-file"><strong>Select multispectral TIFF</strong></label>
+          <input id="tiff-file" name="file" type="file" accept=".tif,.tiff,image/tiff" required>
+          <div id="file-info" class="hint" style="margin:0">No file selected.</div>
+        </div>
+        <div class="actions">
+          <button id="submit-button" type="submit">Predict water mask</button>
+          <a id="download-link" class="secondary" href="#" download="water_mask.png" hidden>Download mask</a>
+        </div>
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+      </form>
+      <section id="results" class="results" aria-live="polite">
+        <h2>Prediction results</h2>
+        <div class="results-grid">
+          <article class="result-card">
+            <h3>RGB reference (display only)</h3>
+            <div class="image-frame"><img id="rgb-image" alt="RGB preview from Red, Green and Blue bands" hidden><div id="rgb-empty" class="empty">RGB preview appears here.</div></div>
+            <p class="stats">Built from bands Red (index 3), Green (index 2), and Blue (index 1). This preview is not used as model input.</p>
+          </article>
+          <article class="result-card">
+            <h3>Predicted water mask</h3>
+            <div class="image-frame"><img id="mask-image" alt="Predicted binary water mask" hidden><div id="mask-empty" class="empty">Prediction mask appears here.</div></div>
+            <div class="legend"><span><i class="dot" style="background:#fff"></i>White = water</span><span><i class="dot" style="background:#111"></i>Black = background</span></div>
+            <p id="prediction-stats" class="stats"></p>
+          </article>
+        </div>
+      </section>
+    </section>
+  </main>
+  <footer>Water Segmentation · Cellula project · Binary mask threshold: 0.5</footer>
+  <script>
+    const form = document.getElementById('upload-form');
+    const fileInput = document.getElementById('tiff-file');
+    const fileInfo = document.getElementById('file-info');
+    const button = document.getElementById('submit-button');
+    const statusBox = document.getElementById('status');
+    const results = document.getElementById('results');
+    const rgbImage = document.getElementById('rgb-image');
+    const maskImage = document.getElementById('mask-image');
+    const rgbEmpty = document.getElementById('rgb-empty');
+    const maskEmpty = document.getElementById('mask-empty');
+    const downloadLink = document.getElementById('download-link');
+    const predictionStats = document.getElementById('prediction-stats');
+    let rgbUrl = null;
+    let maskUrl = null;
+
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files[0];
+      fileInfo.textContent = file ? `${file.name} · ${(file.size / (1024 * 1024)).toFixed(2)} MB` : 'No file selected.';
+    });
+
+    async function readError(response) {
+      const body = await response.text();
+      try { const parsed = JSON.parse(body); return parsed.error || body; }
+      catch (_) { return body || `Request failed (${response.status}).`; }
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const file = fileInput.files[0];
+      if (!file) {
+        statusBox.textContent = 'Please select a TIFF file first.';
+        statusBox.className = 'status error';
+        return;
+      }
+
+      button.disabled = true;
+      button.textContent = 'Processing…';
+      statusBox.className = 'status';
+      statusBox.textContent = 'Reading 12 bands and running inference. The first prediction may take longer while the model loads.';
+      results.classList.remove('visible');
+      downloadLink.hidden = true;
+      predictionStats.textContent = '';
+
+      const payload = new FormData();
+      payload.append('file', file, file.name);
+
+      try {
+        // Preview is only for display; /predict receives the same original TIFF.
+        const [previewResponse, predictionResponse] = await Promise.all([
+          fetch('/preview', { method: 'POST', body: payload }),
+          fetch('/predict', { method: 'POST', body: payload })
+        ]);
+        if (!previewResponse.ok) throw new Error(`Preview: ${await readError(previewResponse)}`);
+        if (!predictionResponse.ok) throw new Error(await readError(predictionResponse));
+
+        const previewBlob = await previewResponse.blob();
+        const maskBlob = await predictionResponse.blob();
+        if (rgbUrl) URL.revokeObjectURL(rgbUrl);
+        if (maskUrl) URL.revokeObjectURL(maskUrl);
+        rgbUrl = URL.createObjectURL(previewBlob);
+        maskUrl = URL.createObjectURL(maskBlob);
+        rgbImage.src = rgbUrl;
+        rgbImage.hidden = false;
+        rgbEmpty.hidden = true;
+        maskImage.src = maskUrl;
+        maskImage.hidden = false;
+        maskEmpty.hidden = true;
+        downloadLink.href = maskUrl;
+        downloadLink.download = `${file.name.replace(/\.(tif|tiff)$/i, '')}_water_mask.png`;
+        downloadLink.hidden = false;
+        const percent = predictionResponse.headers.get('X-Water-Pixel-Percent');
+        const count = predictionResponse.headers.get('X-Water-Pixel-Count');
+        const total = predictionResponse.headers.get('X-Total-Pixel-Count');
+        predictionStats.textContent = percent !== null
+          ? `Predicted water pixels: ${count} / ${total} (${percent}%). Threshold: 0.5.`
+          : 'Prediction completed. Threshold: 0.5.';
+        results.classList.add('visible');
+        statusBox.textContent = 'Prediction completed successfully.';
+      } catch (error) {
+        statusBox.textContent = error.message || 'An unexpected error occurred.';
+        statusBox.className = 'status error';
+      } finally {
+        button.disabled = false;
+        button.textContent = 'Predict water mask';
+      }
+    });
+  </script>
+</body>
+</html>
